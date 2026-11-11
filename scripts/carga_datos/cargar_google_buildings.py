@@ -51,3 +51,54 @@ def cargar_municipios(coleccion) -> tuple[STRtree, list[str]]:
     shapely.prepare(geoms)  # acelera los predicados espaciales
     print(f"Municipios PDET cargados en memoria: {len(geoms)}")
     return STRtree(geoms), codigos
+
+def procesar_bloque(df: pd.DataFrame, tree: STRtree, codigos: list[str], lote_id):
+    """Devuelve (documentos, n_fuera_pdet, n_rechazados) de un bloque de filas."""
+    lat, lon = numerica(df, "latitude"), numerica(df, "longitude")
+    coord_ok = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+    rechazados = int((~coord_ok).sum())
+    idx = np.flatnonzero(coord_ok)
+
+    # Municipio de cada centroide; si cae en un límite compartido, el de menor índice.
+    pi, ti = tree.query(shapely.points(lon[idx], lat[idx]), predicate="intersects")
+    if len(pi) == 0:
+        return [], len(idx), rechazados
+    orden = np.lexsort((ti, pi))
+    pi, ti = pi[orden], ti[orden]
+    pi, primero = np.unique(pi, return_index=True)
+    ti = ti[primero]
+    sel = idx[pi]
+    fuera = len(idx) - len(sel)
+
+    # Solo se interpreta y valida el WKT de las huellas que sí están en un municipio PDET.
+    wkt = df["geometry"].fillna("").to_numpy(dtype=object)[sel]
+    geoms = shapely.from_wkt(wkt, on_invalid="ignore")
+    valida = (shapely.get_type_id(geoms) == 3) & shapely.is_valid(geoms)  # 3 = Polygon
+    rechazados += int((~valida).sum())
+    sel, ti, geoms = sel[valida], ti[valida], geoms[valida]
+    if len(sel) == 0:
+        return [], fuera, rechazados
+
+    proyectadas = shapely.transform(geoms, lambda c: np.column_stack(A_9377.transform(c[:, 0], c[:, 1])))
+    areas = shapely.area(proyectadas)
+    area_fuente, confianza = numerica(df, "area_in_meters"), numerica(df, "confidence")
+    if "full_plus_code" in df.columns:
+        pluscode = df["full_plus_code"].to_numpy(dtype=object)[sel]
+    else:
+        pluscode = [None] * len(sel)
+
+    docs = []
+    for k in range(len(sel)):
+        r = sel[k]
+        pc = pluscode[k]
+        docs.append({
+            "codigo_dane": codigos[ti[k]],
+            "lote_id": lote_id,
+            "geometria": mapping(geoms[k]),
+            "centroide": {"type": "Point", "coordinates": [float(lon[r]), float(lat[r])]},
+            "area_m2": float(areas[k]),
+            "area_fuente_m2": opcional(area_fuente[r]),
+            "confianza": opcional(confianza[r]),
+            "plus_code": None if pd.isna(pc) else str(pc),
+        })
+    return docs, fuera, rechazados
