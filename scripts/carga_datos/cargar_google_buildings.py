@@ -102,3 +102,120 @@ def procesar_bloque(df: pd.DataFrame, tree: STRtree, codigos: list[str], lote_id
             "plus_code": None if pd.isna(pc) else str(pc),
         })
     return docs, fuera, rechazados
+
+
+def insertar(coleccion, docs: list[dict]) -> tuple[int, int]:
+    """Inserción masiva no ordenada. Devuelve (insertados, fallidos)."""
+    if not docs:
+        return 0, 0
+    try:
+        return len(coleccion.insert_many(docs, ordered=False).inserted_ids), 0
+    except BulkWriteError as exc:
+        insertados = int(exc.details.get("nInserted", 0))
+        return insertados, len(docs) - insertados
+
+
+def cargar_archivo(ruta: Path, db, tree, codigos, tam_bloque: int, max_bloques: int | None, simular: bool) -> bool:
+    lotes, edif = db["lotes_carga"], db["edificaciones_google"]
+    lote_id = None
+    if not simular:
+        lote_id = lotes.insert_one({
+            "fuente": "google", "archivo": ruta.name,
+            "n_leidos": 0, "n_insertados": 0, "n_rechazados": 0, "n_fuera_pdet": 0,
+            "fecha_carga": ahora(), "estado": "en_proceso",
+        }).inserted_id
+
+    leidos = insertados = rechazados = fuera = 0
+    t0 = time.time()
+    try:
+        lector = pd.read_csv(ruta, compression="gzip", chunksize=tam_bloque,
+                             usecols=lambda c: c.strip() in COLUMNAS)
+        for i, df in enumerate(lector, 1):
+            df.columns = df.columns.str.strip()
+            if i == 1 and REQUERIDAS - set(df.columns):
+                raise ValueError("Faltan columnas: " + ", ".join(sorted(REQUERIDAS - set(df.columns))))
+
+            docs, b_fuera, b_rech = procesar_bloque(df, tree, codigos, lote_id)
+            b_ins, b_fall = (len(docs), 0) if simular else insertar(edif, docs)
+
+            leidos += len(df)
+            insertados += b_ins
+            fuera += b_fuera
+            rechazados += b_rech + b_fall
+            if not simular:
+                lotes.update_one({"_id": lote_id}, {"$set": {
+                    "n_leidos": leidos, "n_insertados": insertados,
+                    "n_rechazados": rechazados, "n_fuera_pdet": fuera}})
+            print(f"  bloque {i}: leídos {leidos:,} | PDET {insertados:,} | fuera de PDET {fuera:,} "
+                  f"| rechazados {rechazados:,} | {time.time() - t0:,.0f} s")
+            if max_bloques and i >= max_bloques:
+                break
+        if leidos != insertados + fuera + rechazados:
+            print("  AVISO: los contadores no cuadran (leídos != insertados + fuera + rechazados).")
+        if not simular:
+            lotes.update_one({"_id": lote_id}, {"$set": {"estado": "completado", "fecha_fin": ahora()}})
+        return True
+    except BaseException as exc:
+        if not simular:
+            lotes.update_one({"_id": lote_id}, {"$set": {
+                "estado": "interrumpido" if isinstance(exc, KeyboardInterrupt) else "error",
+                "mensaje_error": str(exc), "fecha_fin": ahora()}})
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            raise
+        print(f"ERROR en {ruta.name}: {exc}", file=sys.stderr)
+        return False
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Carga Google Open Buildings (.csv.gz) a MongoDB.")
+    ap.add_argument("--input-dir", required=True, help="Carpeta con los archivos .csv.gz.")
+    ap.add_argument("--mongo-uri", default= "mongodb://is109502:Urz1RTbguW0EsJP@orion.javeriana.edu.co:27017/is109502_db?authSource=is109502_db")
+    ap.add_argument("--database", default="is109502_db")
+    ap.add_argument("--batch-size", type=int, default=50000, help="Filas por bloque (50000 por defecto).")
+    a = ap.parse_args()
+
+    carpeta = Path(a.input_dir)
+    archivos = sorted(carpeta.glob("*.csv.gz"))
+    if not carpeta.is_dir() or not archivos:
+        print(f"ERROR: no hay archivos *.csv.gz en {carpeta}", file=sys.stderr)
+        return 1
+
+    cliente = MongoClient(a.mongo_uri, serverSelectionTimeoutMS=5000)
+    try:
+        cliente.admin.command("ping")
+        db = cliente[a.database]
+        tree, codigos = cargar_municipios(db["municipios_pdet"])
+        lotes, edif = db["lotes_carga"], db["edificaciones_google"]
+
+        print(f"Archivos encontrados: {len(archivos)}" + ("  [SIMULACIÓN: no se escribe nada]" if a.dry_run else ""))
+        for n, ruta in enumerate(archivos, 1):
+            print(f"\n[{n}/{len(archivos)}] {ruta.name}")
+            if not a.dry_run:
+                previo = lotes.find_one({"fuente": "google", "archivo": ruta.name})
+                if previo and previo.get("estado") == "completado":
+                    print("  Ya cargado (lote completado): se omite.")
+                    continue
+                if previo:
+                    print(f"  Lote previo en estado '{previo.get('estado')}': se limpia y se reprocesa.")
+                    edif.delete_many({"lote_id": previo["_id"]})
+                    lotes.delete_one({"_id": previo["_id"]})
+            if not cargar_archivo(ruta, db, tree, codigos, a.batch_size, a.max_chunks, a.dry_run):
+                print("Carga detenida. Vuelva a ejecutar el script: retoma desde este archivo.", file=sys.stderr)
+                return 1
+
+        if not a.dry_run:
+            print("\n===== RESUMEN (lotes_carga) =====")
+            for l in lotes.find({"fuente": "google"}).sort("archivo", 1):
+                print(f"{l['archivo']}: leídos {l['n_leidos']:,} | insertados {l['n_insertados']:,} | "
+                      f"fuera PDET {l.get('n_fuera_pdet', 0):,} | rechazados {l['n_rechazados']:,} | {l.get('estado')}")
+            print(f"edificaciones_google: {edif.estimated_document_count():,} documentos")
+            if a.crear_indices:
+                crear_indices(db)
+            else:
+                print("Siguiente paso: cree los índices con --crear-indices (o desde Compass).")
+        return 0
+    finally:
+        cliente.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

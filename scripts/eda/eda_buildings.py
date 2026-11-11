@@ -17,8 +17,6 @@ def read_vector(path: Path) -> gpd.GeoDataFrame:
     if suffixes.endswith((".parquet", ".geoparquet")):
         return gpd.read_parquet(path)
 
-    # pyogrio + Arrow is generally faster and more memory-efficient than
-    # the default Fiona path when the optional dependencies are installed.
     try:
         return gpd.read_file(path, engine="pyogrio", use_arrow=True)
     except (ImportError, TypeError):
@@ -113,6 +111,90 @@ def analyze_dataset(label: str, path: Path) -> tuple[dict[str, Any], list[dict[s
     }
 
     return summary, field_rows
+
+def make_markdown(summaries: list[dict[str, Any]]) -> str:
+    lines = [
+        "# Exploratory Data Analysis (EDA) – Building Footprints",
+        "",
+        "## Objetivo",
+        "",
+        "Describir y comparar las características geométricas y alfanuméricas "
+        "de los conjuntos de huellas de edificaciones seleccionados: Google "
+        "Open Buildings y GlobalBuildingAtlas (TUM).",
+        "",
+        "## Metodología",
+        "",
+        "- Se contabilizan las entidades (huellas) de cada archivo.",
+        "- Se identifica el sistema de referencia de coordenadas (CRS) y los "
+        "tipos de geometría.",
+        "- Se revisan geometrías nulas, vacías e inválidas.",
+        "- Se calcula la extensión espacial (bounding box).",
+        "- Se calcula el área geométrica en m² usando la proyección de área "
+        "equivalente EPSG:6933; no se calcula directamente sobre coordenadas "
+        "geográficas en grados.",
+        "- Se revisa la completitud y cardinalidad de los atributos.",
+        "",
+        "## Resultados",
+        "",
+        "| Métrica | Google Open Buildings | GlobalBuildingAtlas (TUM) |",
+        "|---|---:|---:|",
+    ]
+
+    by_label = {s["dataset"]: s for s in summaries}
+    google = by_label.get("Google Open Buildings", {})
+    tum = by_label.get("GlobalBuildingAtlas (TUM)", {})
+
+    metrics = [
+        ("Número de huellas", "feature_count"),
+        ("CRS", "crs"),
+        ("Tipos de geometría", "geometry_types"),
+        ("Geometrías nulas", "null_geometries"),
+        ("Geometrías vacías", "empty_geometries"),
+        ("Geometrías inválidas", "invalid_geometries"),
+        ("Geometrías válidas (%)", "valid_geometry_pct"),
+        ("Número de atributos", "attribute_count"),
+        ("Área mínima (m²)", "area_min_m2"),
+        ("Área mediana (m²)", "area_median_m2"),
+        ("Área promedio (m²)", "area_mean_m2"),
+        ("Área máxima (m²)", "area_max_m2"),
+    ]
+
+    def display(value: Any) -> str:
+        if value is None or value == {}:
+            return "No disponible"
+        if isinstance(value, dict):
+            return ", ".join(f"{k}: {v}" for k, v in value.items())
+        if isinstance(value, float):
+            return f"{value:,.2f}"
+        return str(value)
+
+    for title, key in metrics:
+        lines.append(
+            f"| {title} | {display(google.get(key))} | {display(tum.get(key))} |"
+        )
+
+    lines += [
+        "",
+        "## Interpretación",
+        "",
+        "Completar esta sección después de revisar los resultados: comparar el "
+        "volumen de huellas, la calidad geométrica, la distribución de áreas "
+        "y la disponibilidad de atributos de cada fuente. No asumir que los "
+        "dos conjuntos representan exactamente las mismas edificaciones ni "
+        "que sus áreas fueron calculadas con el mismo método.",
+        "",
+        "## Archivos de resultados",
+        "",
+        "- `eda_summary.json`: resumen completo por conjunto de datos.",
+        "- `eda_fields.csv`: valores faltantes y cantidad de valores distintos "
+        "por atributo.",
+        "",
+        "> Nota: los resultados describen los archivos de entrada utilizados. "
+        "Registrar en el informe la versión, fecha de descarga, cobertura "
+        "geográfica y cualquier filtro aplicado antes del análisis.",
+        "",
+    ]
+    return "\n".join(lines)
 
 def main() -> None:
     parser = argparse.ArgumentParser(
