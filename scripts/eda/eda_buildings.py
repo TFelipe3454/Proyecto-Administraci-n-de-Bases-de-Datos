@@ -10,6 +10,24 @@ import pandas as pd
 # Formato de los datos en las fuentes
 AREA_CRS = "EPSG:6933"
 
+def read_vector(path: Path) -> gpd.GeoDataFrame:
+    """Read GeoParquet or another vector format."""
+    suffixes = "".join(path.suffixes).lower()
+
+    if suffixes.endswith((".parquet", ".geoparquet")):
+        return gpd.read_parquet(path)
+
+    # pyogrio + Arrow is generally faster and more memory-efficient than
+    # the default Fiona path when the optional dependencies are installed.
+    try:
+        return gpd.read_file(path, engine="pyogrio", use_arrow=True)
+    except (ImportError, TypeError):
+        return gpd.read_file(path)
+
+def safe_number(value: Any) -> float | int | None:
+    if pd.isna(value):
+        return None
+    return float(value)
 
 def analyze_dataset(label: str, path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not path.exists():
@@ -96,6 +114,55 @@ def analyze_dataset(label: str, path: Path) -> tuple[dict[str, Any], list[dict[s
 
     return summary, field_rows
 
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="EDA comparativo de Google Open Buildings y GlobalBuildingAtlas."
+    )
+    parser.add_argument("--google", required=True, help="Ruta del archivo Google.")
+    parser.add_argument("--tum", required=True, help="Ruta del archivo TUM/GBA.")
+    parser.add_argument("--output-dir", default="results/eda", help="Carpeta de salida.")
+    args = parser.parse_args()
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    inputs = [
+        ("Google Open Buildings", Path(args.google)),
+        ("GlobalBuildingAtlas (TUM)", Path(args.tum)),
+    ]
+
+    summaries = []
+    all_field_rows = []
+
+    for label, path in inputs:
+        print(f"Analizando {label}: {path}")
+        summary, field_rows = analyze_dataset(label, path)
+        summaries.append(summary)
+        all_field_rows.extend(field_rows)
+        print(
+            f"  Huellas: {summary['feature_count']:,} | "
+            f"CRS: {summary['crs']} | "
+            f"Geometrías inválidas: {summary['invalid_geometries']:,}"
+        )
+
+    (output_dir / "eda_summary.json").write_text(
+        json.dumps(summaries, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    pd.DataFrame(all_field_rows).to_csv(
+        output_dir / "eda_fields.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    (output_dir / "eda_report.md").write_text(
+        make_markdown(summaries),
+        encoding="utf-8",
+    )
+
+    print("\nEDA finalizado.")
+    print(f"Resultados guardados en: {output_dir.resolve()}")
 
 if __name__ == "__main__":
     main()
