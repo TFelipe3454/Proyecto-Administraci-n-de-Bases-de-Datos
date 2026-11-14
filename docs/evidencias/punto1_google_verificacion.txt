@@ -1,0 +1,39 @@
+VERIFICACION edificaciones_google - 2026-11-13 21:46
+
+1. Total de documentos: 2,686,922
+
+2. Municipios con edificios en Google: 165 de 170 PDET
+   PDET sin edificios: ['05475', '05873', '27099', '27450', '27491']
+   Codigos de Google que no son PDET: []
+
+3. Nulos o inexistentes por campo:
+   codigo_dane: 0
+   geometria: 0
+   centroide: 0
+   area_m2: 0
+   area_fuente_m2: 0
+   confianza: 0
+
+4. Tipos de geometria:
+   {'geometria': 'Polygon', 'centroide': 'Point'}: 2,686,922
+
+5. Rango de centroides: lon [-78.9456, -70.0281], lat [0.0002, 11.3417]
+   Centroides fuera de la caja de Colombia: 0
+
+6. area_m2: min 2.50, max 20878.99, promedio 82.40
+   area_m2 <= 0: 0
+   confianza: min 0.650, max 0.983, promedio 0.780
+
+7. Edificios por municipio (suma = 2,686,922)
+   Los 5 con mas: 47001=183,651, 20001=171,424, 76109=103,889, 05837=78,926, 18001=58,135
+   Los 5 con menos: 27150=281, 27205=239, 52612=196, 19418=24, 27745=1
+
+8. Bitacora lotes_carga (fuente google):
+   estado=completado: 6 lotes, leidos 26,515,050, insertados 2,686,922, rechazados 11, fuera de PDET 23,828,117
+   Insertados segun bitacora: 2,686,922 | Documentos en la colección: 2,686,922 | COINCIDEN
+
+9. Índices:
+   _id_: {'_id': 1}
+   centroide_2dsphere: {'centroide': '2dsphere'}
+   codigo_dane_1: {'codigo_dane': 1}
+   lote_id_1: {'lote_id': 1}
