@@ -7,7 +7,6 @@ dejar contraseñas escritas en el código:
     $env:MONGO_URI = "mongodb://usuario:clave@host:27017/base?authSource=base"
     python cargar_gba.py --input-dir ".\\gba" --database is109502_db --dry-run --max-chunks 2
     python cargar_gba.py --input-dir ".\\gba" --database is109502_db
-    python cargar_gba.py --input-dir ".\\gba" --database is109502_db --crear-indices
 """
 
 from __future__ import annotations
@@ -220,16 +219,6 @@ def cargar_tesela(ruta: Path, nombre: str, db, tree, codigos, tam_bloque, max_bl
         print(f"ERROR en {nombre}: {exc}", file=sys.stderr)
         return False
 
-
-def crear_indices(db) -> None:
-    edif = db["edificaciones_gba1"]
-    print("Creando índices (puede tardar)...")
-    edif.create_index([("centroide", GEOSPHERE)])
-    edif.create_index([("codigo_dane", ASCENDING)])
-    edif.create_index([("lote_id", ASCENDING)])
-    print("Índices creados: centroide (2dsphere), codigo_dane, lote_id.")
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description="Carga GlobalBuildingAtlas (.geojson) a MongoDB.")
     ap.add_argument("--input-dir", required=True, help="Carpeta con las teselas .geojson (se busca en subcarpetas).")
@@ -238,7 +227,6 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=20000, help="Edificaciones por bloque (20000 por defecto).")
     ap.add_argument("--max-chunks", type=int, default=None, help="Procesa solo N bloques por tesela (pruebas).")
     ap.add_argument("--dry-run", action="store_true", help="Procesa y diagnostica sin escribir en MongoDB.")
-    ap.add_argument("--crear-indices", action="store_true", help="Crea los índices al terminar la carga.")
     a = ap.parse_args()
 
     carpeta = Path(a.input_dir)
@@ -285,12 +273,7 @@ def main() -> int:
         if sin:
             print(f"Municipios SIN ninguna edificación ({len(sin)}): " + ", ".join(sin))
             print("  -> Si esperaba datos allí, revise que estén descargadas todas las teselas y ambos productos de GBA.")
-        if not a.dry_run:
-            if a.crear_indices:
-                crear_indices(db)
-            else:
-                print("Siguiente paso: cree los índices con --crear-indices (o desde Compass).")
-        return 0
+       
     finally:
         cliente.close()
 
