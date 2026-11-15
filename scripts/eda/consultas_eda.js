@@ -41,7 +41,34 @@ db.edificaciones_gba1.aggregate([
       coincide: { $eq: ["$docs","$l.n_insertados"] } } }
 ]);
 
-//Consulta 3: Estadisticas principales de ambas fuentes de datos
+/* Consulta 3: Consulta 3: estadística descriptiva del tiempo de carga de los lotes
+  y edificaciones cargadas 
+*/
+db.lotes_carga.aggregate([
+  { $match: { estado: "completado", fecha_fin: { $type: "date" } } },
+  { $addFields: { duracion_s: { $divide: [{ $subtract: ["$fecha_fin", "$fecha_carga"] }, 1000] } } },
+  { $group: { _id: "$fuente", lotes: { $sum: 1 },
+      duracion_total_s: { $sum: "$duracion_s" },
+      duracion_media_s: { $avg: "$duracion_s" },
+      duracion_mediana_s: { $median: { input: "$duracion_s", method: "approximate" } },
+      duracion_min_s: { $min: "$duracion_s" },
+      duracion_max_s: { $max: "$duracion_s" },
+      duracion_desv_s: { $stdDevPop: "$duracion_s" },
+      leidos: { $sum: "$n_leidos" }, insertados: { $sum: "$n_insertados" } } },
+  { $addFields: {
+      duracion_total_min: { $round: [{ $divide: ["$duracion_total_s", 60] }, 1] },
+      duracion_media_s: { $round: ["$duracion_media_s", 1] },
+      duracion_mediana_s: { $round: ["$duracion_mediana_s", 1] },
+      duracion_min_s: { $round: ["$duracion_min_s", 1] },
+      duracion_max_s: { $round: ["$duracion_max_s", 1] },
+      duracion_desv_s: { $round: ["$duracion_desv_s", 1] },
+      leidos_por_s: { $round: [{ $divide: ["$leidos", { $max: ["$duracion_total_s", 0.001] }] }, 0] },
+      insertados_por_s: { $round: [{ $divide: ["$insertados", { $max: ["$duracion_total_s", 0.001] }] }, 0] },
+      ms_por_edificacion_insertada: { $round: [{ $divide: [{ $multiply: ["$duracion_total_s", 1000] }, { $max: ["$insertados", 1] }] }, 3] } } },
+  { $project: { duracion_total_s: 0 } }
+]).forEach(printjson);
+
+//Consulta 4: Estadisticas principales de ambas fuentes de datos
 ["edificaciones_google","edificaciones_gba1"].forEach(c => {
   print("=== " + c);
   printjson(db[c].aggregate([
@@ -58,7 +85,7 @@ db.edificaciones_gba1.aggregate([
   ], { allowDiskUse: true }).toArray());
 });
 
-//Consulta 4: Percentiles y distribucion por rango de area de ambas fuentes
+//Consulta 5: Percentiles y distribucion por rango de area de ambas fuentes
 ["edificaciones_google","edificaciones_gba1"].forEach(c => {
   print("=== " + c);
   printjson(db[c].aggregate([{ $group:{ _id:null, percentiles:{ $percentile:{
@@ -68,11 +95,11 @@ db.edificaciones_gba1.aggregate([
     output:{ edificaciones:{ $sum:1 } } } }]).toArray());
 });
 
-//Consulta 5: Top 10 de municipios por numero de edificaciones
+//Consulta 6: Top 5 de municipios por numero de edificaciones
 //Para Google buildings
 db.edificaciones_google.aggregate([
   { $group:{ _id:"$codigo_dane", edificaciones:{ $sum:1 }, area_total_m2:{ $sum:"$area_m2" }, area_media_m2:{ $avg:"$area_m2" } } },
-  { $sort:{ edificaciones:-1 } }, { $limit:10 },
+  { $sort:{ edificaciones:-1 } }, { $limit:5 },
   { $lookup:{ from:"municipios_pdet", localField:"_id", foreignField:"codigo_dane", as:"m" } },
   { $project:{ _id:0, codigo_dane:"$_id", municipio:{ $first:"$m.nombre" }, edificaciones:1, area_total_m2:1, area_media_m2:1 } }
 ]);
@@ -80,12 +107,12 @@ db.edificaciones_google.aggregate([
 //Para Atlas buildings
 db.edificaciones_gba1.aggregate([
   { $group:{ _id:"$codigo_dane", edificaciones:{ $sum:1 }, area_total_m2:{ $sum:"$area_m2" }, area_media_m2:{ $avg:"$area_m2" } } },
-  { $sort:{ edificaciones:-1 } }, { $limit:10 },
+  { $sort:{ edificaciones:-1 } }, { $limit:5 },
   { $lookup:{ from:"municipios_pdet", localField:"_id", foreignField:"codigo_dane", as:"m" } },
   { $project:{ _id:0, codigo_dane:"$_id", municipio:{ $first:"$m.nombre" }, edificaciones:1, area_total_m2:1, area_media_m2:1 } }
 ]);
 
-//Consulta 6: Municipios sin edificaciones en ambas fuentes de datos
+//Consulta 7: Municipios sin edificaciones en ambas fuentes de datos
 ["edificaciones_google","edificaciones_gba1"].forEach(c => {
   print("Sin edificaciones en " + c + ":");
   printjson(db.municipios_pdet.aggregate([
@@ -95,7 +122,7 @@ db.edificaciones_gba1.aggregate([
   ]).toArray());
 });
 
-//Consulta 7: Comparacion de edificaciones en ambas fuentes por municipio
+//Consulta 8: Comparacion de edificaciones en ambas fuentes por municipio
 db.edificaciones_google.aggregate([
   { $group:{ _id:"$codigo_dane", n:{ $sum:1 }, area:{ $sum:"$area_m2" } } },
   { $project:{ fuente:{ $literal:"google" }, n:1, area:1 } },
@@ -114,7 +141,7 @@ db.edificaciones_google.aggregate([
   { $sort:{ n_google:-1 } }
 ], { allowDiskUse:true });
 
-//Consulta 8: Resumen de edificaciones por departamento y subregion PDET
+//Consulta 9: Resumen de edificaciones por departamento y subregion PDET
 const porMunicipio = [
   { $group: { _id: "$codigo_dane", n: { $sum: 1 }, area: { $sum: "$area_m2" } } },
   { $lookup: { from: "municipios_pdet", localField: "_id", foreignField: "codigo_dane", as: "m" } },
@@ -137,7 +164,7 @@ const porMunicipio = [
   });
 });
 
-//Consulta 9: Calculo de la correlacion de Pearson, que tanto se parecen google y atlas
+//Consulta 10: Calculo de la correlacion de Pearson, que tanto se parecen google y atlas
 const comparacion = [
   { $group: { _id: "$codigo_dane", n: { $sum: 1 }, area: { $sum: "$area_m2" } } },
   { $project: { fuente: { $literal: "google" }, n: 1, area: 1 } },
