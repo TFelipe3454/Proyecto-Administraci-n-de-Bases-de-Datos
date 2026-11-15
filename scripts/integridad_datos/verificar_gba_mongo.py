@@ -83,11 +83,28 @@ for r in db.lotes_carga.aggregate([{"$match": {"fuente": "globalbuildingatlas"}}
         "_id": "$estado", "lotes": {"$sum": 1}, "leidos": {"$sum": "$n_leidos"},
         "insertados": {"$sum": "$n_insertados"}, "rechazados": {"$sum": "$n_rechazados"}}}]):
     tot_ins += r["insertados"]
-    log(f"   estado={r['_id']}: {r['lotes']} lotes, leídos {r['leidos']:,}, "
+    log(f"   estado={r['_id']}: {r['lotes']} lotes, leidos {r['leidos']:,}, "
         f"insertados {r['insertados']:,}, rechazados {r['rechazados']}")
 log(f"   Insertados segun bitacora: {tot_ins:,} | Documentos en la colección: {total:,} | "
     f"{'COINCIDEN' if tot_ins == total else 'NO COINCIDEN'}")
 lotes_en_col = col.distinct("lote_id")
 lotes_bitacora = set(db.lotes_carga.distinct("_id", {"fuente": "globalbuildingatlas"}))
 log(f"   Lotes distintos en la coleccion: {len(lotes_en_col)} | "
-    f"lotes de la colección que no estan en la bitacora: {len(set(lotes_en_col) - lotes_bitacora)}")
+    f"lotes de la coleccion que no estan en la bitacora: {len(set(lotes_en_col) - lotes_bitacora)}")
+# 9. Índices
+log("\n9. Indices:")
+for ix in col.list_indexes():
+    log(f"   {ix['name']}: {dict(ix['key'])}")
+
+# 10. Prueba del índice espacial con un municipio
+codigo = "86573"
+mpio = db.municipios_pdet.find_one({"codigo_dane": codigo})
+q = {"centroide": {"$geoWithin": {"$geometry": mpio["geometria"]}}}
+e = db.command({"explain": {"find": NOMBRE_COL, "filter": q}, "verbosity": "executionStats"})
+plan = str(e["queryPlanner"]["winningPlan"])
+log(f"\n10. Prueba $geoWithin con el municipio {codigo}:")
+log(f"   Usa IXSCAN: {'si' if 'IXSCAN' in plan else 'NO'} | "
+    f"devueltos {e['executionStats']['nReturned']:,} | "
+    f"examinados {e['executionStats']['totalDocsExamined']:,} | "
+    f"{e['executionStats']['executionTimeMillis']} ms")
+log(f"   Por codigo_dane: {col.count_documents({'codigo_dane': codigo}):,}")    
