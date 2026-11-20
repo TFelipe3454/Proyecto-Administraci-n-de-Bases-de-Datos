@@ -38,7 +38,7 @@ def elegir_corrida(db, corrida=None):
 
 
 def leer_resumen():
-    ruta = SALIDA / "resumen_municipal.csv"
+    ruta = SALIDA / "/Users/Administrador/PUJ2630/DBA/Proyecto-Administraci-n-de-Bases-de-Datos/resultados/resumen/resumen_municipal.csv"
     if not ruta.exists():
         sys.exit(f"No existe {ruta}. Ejecute primero exportar_resumen.py")
     return pd.read_csv(ruta, dtype={"codigo_dane": str})
