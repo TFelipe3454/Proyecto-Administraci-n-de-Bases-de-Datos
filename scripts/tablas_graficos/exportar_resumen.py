@@ -13,7 +13,7 @@ SALIDA.mkdir(exist_ok=True)
 
 db = MongoClient(os.environ["MONGO_URI"], serverSelectionTimeoutMS=15000)[os.environ["MONGO_DB"]]
 
-# 1. Corrida: la indicada por argumento o la más reciente completada
+# 1
 if len(sys.argv) > 1:
     corrida = sys.argv[1]
 else:
@@ -27,19 +27,19 @@ print(f"Corrida: {corrida} | ejecuciones: {len(ids)}")
 res = pd.DataFrame(list(db.resumen_municipal.find({"ejecucion_id": {"$in": ids}}, {"_id": 0})))
 res = res.drop(columns=["ejecucion_id"])
 
-# 3. Datos del municipio (sin la geometría)
+# 3. Datos del municipio 
 mpios = pd.DataFrame(list(db.municipios_pdet.find({}, {"_id": 0, "geometria": 0})))
 mpios = mpios[["codigo_dane", "nombre", "departamento_nombre", "subregion_pdet"]]
 df = res.merge(mpios, on="codigo_dane", how="left")
 df["corrida_id"] = corrida
 df = df.sort_values(["fuente", "codigo_dane"])
 df.to_csv(SALIDA / "resumen_municipal.csv", index=False, encoding="utf-8-sig")
-# 4. Parámetros de la corrida
+# 4. Parametros
 params = [{"fuente": e["fuente"], "area_min": e.get("area_min"), "confianza_min": e.get("confianza_min"),
            "fecha": e["fecha_ejecucion"].isoformat()} for e in ejecs]
 (SALIDA / "parametros_corrida.json").write_text(
     json.dumps({"corrida_id": corrida, "ejecuciones": params}, indent=2), encoding="utf-8")
 
-# 5. Comprobaciones: deben coincidir con la salida de analisis_techos.py
+# 5. Comprobaciones
 print(f"Filas: {len(df)} | municipios sin nombre: {df['nombre'].isna().sum()}")
 print(df.groupby("fuente")[["n_edificaciones", "n_aptas", "area_total_m2", "area_apta_m2"]].sum().round(0))
