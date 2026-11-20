@@ -1,0 +1,17 @@
+{
+  "corrida_id": "e7b81511-812a-4b6b-abd1-8dc63fed6fca",
+  "ejecuciones": [
+    {
+      "fuente": "google",
+      "area_min": 90.0,
+      "confianza_min": 0.7,
+      "fecha": "2026-11-18T03:19:01.193000"
+    },
+    {
+      "fuente": "gba",
+      "area_min": 90.0,
+      "confianza_min": null,
+      "fecha": "2026-11-18T03:19:05.550000"
+    }
+  ]
+}
