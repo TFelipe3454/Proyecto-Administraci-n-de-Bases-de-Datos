@@ -137,8 +137,8 @@ def main():
     p.add_argument("--mongo-uri", default=os.environ.get("MONGO_URI"))
     p.add_argument("--database", default=os.environ.get("MONGO_DB", "is109502_db"))
     p.add_argument("--fuente", choices=["google", "gba", "ambas"], default="ambas")
-    p.add_argument("--area-min", type=float, default=90.0, help="area minima en m2, defecto 60")
-    p.add_argument("--confianza-min", type=float, default=0.70, help="confianza minima, solo Google")
+    p.add_argument("--area-min", type=float, default=90.0,help="area minima en m2 (defecto: %(default)s)")
+    p.add_argument("--confianza-min", type=float, default=0.70, help="confianza minima, solo Google (defecto: %(default)s)")
     p.add_argument("--dry-run", action="store_true", help="calcula e imprime sin escribir en la base")
     args = p.parse_args()
     if not args.mongo_uri:
