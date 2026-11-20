@@ -10,7 +10,8 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass
+    print("Aviso: python-dotenv no esta instalado; solo se usaran variables de entorno del sistema.",
+        file=sys.stderr)
 
 # Carpeta de salida: <raiz del repositorio>/resultados (se puede cambiar con RESULTADOS_DIR)
 SALIDA = Path(os.environ.get("RESULTADOS_DIR") or Path(__file__).resolve().parents[2] / "resultados")
