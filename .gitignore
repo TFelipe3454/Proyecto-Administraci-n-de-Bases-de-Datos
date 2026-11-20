@@ -1,1 +1,14 @@
+# Credenciales
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS / editores
 .DS_Store
+.idea/
+.vscode/
+EOF
