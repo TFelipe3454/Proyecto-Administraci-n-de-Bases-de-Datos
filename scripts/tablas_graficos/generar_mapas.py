@@ -135,7 +135,7 @@ def main():
 
     # Dispersion Google vs GBA (log-log; solo municipios con area apta en ambas)
     ok = ancho[(ancho["area_apta_ha_google"] > 0) & (ancho["area_apta_ha_gba"] > 0)]
-    r = ancho["area_apta_m2_google"].corr(ancho["area_apta_m2_gba"])
+    r = np.log10(ok["area_apta_ha_google"]).corr(np.log10(ok["area_apta_ha_gba"]))
     fig, ax = plt.subplots(figsize=(6.5, 6.5))
     ax.scatter(ok["area_apta_ha_google"], ok["area_apta_ha_gba"], s=14, alpha=0.7, color="#3c6fa5")
     lim = [min(ok["area_apta_ha_google"].min(), ok["area_apta_ha_gba"].min()),
@@ -143,7 +143,7 @@ def main():
     ax.plot(lim, lim, "--", color="#888888", label="Igualdad (y = x)")
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("Area apta Google (ha)"); ax.set_ylabel("Area apta GBA (ha)")
-    ax.set_title(f"Area apta por municipio (Pearson = {r:.3f}, {len(ok)} municipios)")
+    ax.set_title(f"Area apta por municipio ({len(ok)} municipios; Pearson log-log = {r:.3f})")
     ax.legend(frameon=False); ax.spines[["top", "right"]].set_visible(False)
     fig.savefig(SALIDA / "dispersion_fuentes.png", dpi=DPI, bbox_inches="tight")
     plt.close(fig)
